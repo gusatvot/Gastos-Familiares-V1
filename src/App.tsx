@@ -1,4 +1,5 @@
 import { useState, Suspense, lazy } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
@@ -15,8 +16,6 @@ const GoalsPage = lazy(() => import('./pages/GoalsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 
-type Page = 'dashboard' | 'expenses' | 'income' | 'categories' | 'reports' | 'budgets' | 'goals' | 'settings';
-
 // Loading fallback component
 function PageLoader() {
   return (
@@ -29,11 +28,74 @@ function PageLoader() {
   );
 }
 
-function App() {
-  const { user, loading, isEmailVerified } = useAuth();
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+function AppShell() {
+  const location = useLocation();
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Cerrar el panel lateral al navegar
+  // (no usamos useEffect para evitar parpadeo; solo cerramos cuando cambia la ruta)
+  const handleNavigate = () => {
+    setIsSidePanelOpen(false);
+    setIsMobileMenuOpen(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors">
+      {/* Header móvil (solo en pantallas pequeñas) */}
+      <MobileHeader
+        onMenuClick={() => setIsMobileMenuOpen(true)}
+        title="Gastos Familiares"
+      />
+
+      {/* Sidebar (responsive: fijo en desktop, deslizante en móvil) */}
+      <Sidebar
+        currentPath={location.pathname}
+        onNavigate={handleNavigate}
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+      />
+
+      {/* Contenido principal */}
+      <div className="lg:ml-64 pt-16 lg:pt-0">
+        <Layout rightPanelOpen={isSidePanelOpen}>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Dashboard onOpenSidePanel={() => setIsSidePanelOpen(true)} />} />
+              <Route path="/expenses" element={<TransactionsPage type="expense" />} />
+              <Route path="/income" element={<TransactionsPage type="income" />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/budgets" element={<BudgetsPage />} />
+              <Route path="/goals" element={<GoalsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              {/* Fallback: redirige a dashboard */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </Layout>
+      </div>
+
+      {/* Panel lateral de nueva transacción */}
+      <SidePanel
+        isOpen={isSidePanelOpen}
+        onClose={() => setIsSidePanelOpen(false)}
+      />
+
+      {/* Overlay para panel lateral */}
+      {isSidePanelOpen && (
+        <div
+          className="fixed inset-0 bg-black/20 z-30 lg:ml-64"
+          style={{ marginRight: isSidePanelOpen ? '320px' : '0' }}
+          onClick={() => setIsSidePanelOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const { user, loading, isEmailVerified } = useAuth();
 
   // Pantalla de carga
   if (loading) {
@@ -47,8 +109,8 @@ function App() {
     );
   }
 
-  // Si no está logueado, mostrar login
-  if (!user) {
+  // Si no está logueado o no verificó el email → mostrar login/verify
+  if (!user || !isEmailVerified) {
     return (
       <Suspense fallback={<PageLoader />}>
         <LoginPage />
@@ -56,89 +118,7 @@ function App() {
     );
   }
 
-  // Si está logueado pero NO verificó el email
-  if (!isEmailVerified) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <LoginPage />
-      </Suspense>
-    );
-  }
-
-  const renderPage = () => {
-    const content = (() => {
-      switch (currentPage) {
-        case 'dashboard':
-          return <Dashboard onOpenSidePanel={() => setIsSidePanelOpen(true)} />;
-        case 'expenses':
-          return <TransactionsPage type="expense" />;
-        case 'income':
-          return <TransactionsPage type="income" />;
-        case 'categories':
-          return <CategoriesPage />;
-        case 'reports':
-          return <ReportsPage />;
-        case 'budgets':
-          return <BudgetsPage />;
-        case 'goals':
-          return <GoalsPage />;
-        case 'settings':
-          return <SettingsPage />;
-        default:
-          // Exhaustive check - this should never happen
-          return (
-            <div className="text-center py-20">
-              <h1 className="text-4xl font-bold text-gray-800 dark:text-white mb-4">
-                {(currentPage as string).charAt(0).toUpperCase() + (currentPage as string).slice(1)}
-              </h1>
-              <p className="text-gray-600 dark:text-gray-300">Esta página está en construcción 🚧</p>
-            </div>
-          );
-      }
-    })();
-
-    return <Suspense fallback={<PageLoader />}>{content}</Suspense>;
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors">
-      {/* Header móvil (solo en pantallas pequeñas) */}
-      <MobileHeader 
-        onMenuClick={() => setIsMobileMenuOpen(true)} 
-        title="Gastos Familiares"
-      />
-
-      {/* Sidebar (responsive: fijo en desktop, deslizante en móvil) */}
-      <Sidebar 
-        currentPage={currentPage} 
-        onPageChange={setCurrentPage}
-        isOpen={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
-      />
-
-      {/* Contenido principal */}
-      <div className="lg:ml-64 pt-16 lg:pt-0">
-        <Layout rightPanelOpen={isSidePanelOpen}>
-          {renderPage()}
-        </Layout>
-      </div>
-
-      {/* Panel lateral de nueva transacción */}
-      <SidePanel 
-        isOpen={isSidePanelOpen} 
-        onClose={() => setIsSidePanelOpen(false)} 
-      />
-
-      {/* Overlay para panel lateral */}
-      {isSidePanelOpen && (
-        <div 
-          className="fixed inset-0 bg-black/20 z-30 lg:ml-64"
-          style={{ marginRight: isSidePanelOpen ? '320px' : '0' }}
-          onClick={() => setIsSidePanelOpen(false)}
-        />
-      )}
-    </div>
-  );
+  return <AppShell />;
 }
 
 export default App;
