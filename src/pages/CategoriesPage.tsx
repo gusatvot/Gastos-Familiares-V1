@@ -235,6 +235,7 @@ export default function CategoriesPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="color"
+                  defaultValue="#a855f7"
                   className="h-10 w-16 rounded-xl cursor-pointer border-2 border-gray-200 dark:border-slate-700 p-1"
                   {...register('color')}
                 />
