@@ -1,9 +1,183 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ============================================================
+    // Funciones helper reutilizables
+    // ============================================================
+
+    // El usuario está autenticado
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // El UID del documento coincide con el UID del usuario autenticado
+    function ownsDocument() {
+      return isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // El UID que se quiere escribir coincide con el UID autenticado
+    function writesToSelf() {
+      return isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Validación de tipos básicos
+    function isNonEmptyString(value) {
+      return value is string && value.size > 0 && value.size <= 200;
+    }
+
+    function isPositiveNumber(value) {
+      return value is number && value > 0 && value < 1000000000;
+    }
+
+    function isValidDate(value) {
+      return value is string && value.matches(/^\\d{4}-\\d{2}-\\d{2}/);
+    }
+
+    function isValidMonth(value) {
+      return value is string && value.matches(/^\\d{4}-\\d{2}$/);
+    }
+
+    function isValidISODate(value) {
+      return value is string && value.matches(/^\\d{4}-\\d{2}-\\d{2}T/);
+    }
+
+    function isValidTransactionType(value) {
+      return value == 'income' || value == 'expense';
+    }
+
+    function isValidHexColor(value) {
+      return value is string && value.matches(/^#[0-9a-fA-F]{6}$/);
+    }
+
+    // ============================================================
+    // Colección: transactions
+    // ============================================================
+    match /transactions/{id} {
+      allow create: if writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidDate(request.resource.data.date)
+        && isValidTransactionType(request.resource.data.type)
+        && isNonEmptyString(request.resource.data.category)
+        && isValidISODate(request.resource.data.createdAt)
+        && request.resource.data.description is string;
+
+      allow update: if ownsDocument()
+        && writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidDate(request.resource.data.date)
+        && isValidTransactionType(request.resource.data.type)
+        && isNonEmptyString(request.resource.data.category)
+        && request.resource.data.description is string;
+
+      allow delete: if ownsDocument();
+
+      // No permitir leer documentos de otros usuarios.
+      allow read: if ownsDocument();
+    }
+
+    // ============================================================
+    // Colección: categories
+    // ============================================================
+    match /categories/{id} {
+      allow create: if writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonEmptyString(request.resource.data.icon)
+        && isValidHexColor(request.resource.data.color)
+        && isValidTransactionType(request.resource.data.type);
+
+      allow update: if ownsDocument()
+        && writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonEmptyString(request.resource.data.icon)
+        && isValidHexColor(request.resource.data.color)
+        && isValidTransactionType(request.resource.data.type);
+
+      allow delete: if ownsDocument();
+
+      allow read: if ownsDocument();
+    }
+
+    // ============================================================
+    // Colección: budgets
+    // ============================================================
+    match /budgets/{id} {
+      allow create: if writesToSelf()
+        && isNonEmptyString(request.resource.data.categoryId)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidMonth(request.resource.data.month);
+
+      allow update: if ownsDocument()
+        && writesToSelf()
+        && isNonEmptyString(request.resource.data.categoryId)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidMonth(request.resource.data.month);
+
+      allow delete: if ownsDocument();
+
+      allow read: if ownsDocument();
+    }
+
+    // ============================================================
+    // Colección: goals
+    // ============================================================
+    match /goals/{id} {
+      allow create: if writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonEmptyString(request.resource.data.icon)
+        && isValidHexColor(request.resource.data.color)
+        && isPositiveNumber(request.resource.data.targetAmount)
+        && request.resource.data.currentAmount == 0
+        && isValidDate(request.resource.data.deadline)
+        && isValidISODate(request.resource.data.createdAt);
+
+      allow update: if ownsDocument()
+        && writesToSelf()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonEmptyString(request.resource.data.icon)
+        && isValidHexColor(request.resource.data.color)
+        && isPositiveNumber(request.resource.data.targetAmount)
+        && request.resource.data.currentAmount is number
+        && request.resource.data.currentAmount >= 0
+        && isValidDate(request.resource.data.deadline);
+
+      allow delete: if ownsDocument();
+
+      allow read: if ownsDocument();
+    }
+
+    // ============================================================
+    // Colección: contributions
+    // ============================================================
+    match /contributions/{id} {
+      allow create: if writesToSelf()
+        && isNonEmptyString(request.resource.data.goalId)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidDate(request.resource.data.date)
+        && request.resource.data.description is string;
+
+      allow update: if ownsDocument()
+        && writesToSelf()
+        && isNonEmptyString(request.resource.data.goalId)
+        && isPositiveNumber(request.resource.data.amount)
+        && isValidDate(request.resource.data.date)
+        && request.resource.data.description is string;
+
+      allow delete: if ownsDocument();
+
+      allow read: if ownsDocument();
+    }
+
+    // ============================================================
+    // Denegación por defecto: cualquier otra colección queda bloqueada
+    // ============================================================
     match /{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read, write: if false;
     }
   }
 }
