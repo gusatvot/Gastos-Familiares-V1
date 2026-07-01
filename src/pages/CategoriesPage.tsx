@@ -1,51 +1,58 @@
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAppContext } from '../hooks/useAppContext';
-import type { Category } from '../context/AppContext';
+import type { Category } from '../types';
+import { categorySchema, type CategoryFormValues } from '../schemas';
 import { toast } from 'sonner';
 import ConfirmModal from '../components/ConfirmModal';
 import { Tags, Plus, Trash2, Palette, TrendingUp, TrendingDown } from 'lucide-react';
 
-type TransactionType = 'income' | 'expense';
-
 export default function CategoriesPage() {
   const { categories, addCategory, deleteCategory } = useAppContext();
   
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'expense' as TransactionType,
-    icon: '🏷️',
-    color: '#a855f7' // Morado por defecto
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<CategoryFormValues>({
+    resolver: zodResolver(categorySchema),
+    defaultValues: {
+      name: '',
+      type: 'expense',
+      icon: '🏷️',
+      color: '#a855f7',
+    },
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState<string>('');
 
-  const emojiOptions = ['️', '🍔', '🚗', '🎬', '💳', '', '👕', '🏥', '📚', '✈️', '🎮', '🎵', '💡', '🎁', '⚽', '💰', '💼', ''];
+  const emojiOptions = ['🏷️', '🍔', '🚗', '🎬', '💳', '🏠', '👕', '🏥', '📚', '✈️', '🎮', '🎵', '💡', '🎁', '⚽', '💰', '💼', '📈'];
+
+  const watchedType = watch('type');
+  const watchedIcon = watch('icon');
+  const watchedColor = watch('color');
 
   const expenseCategories = categories.filter(c => c.type === 'expense');
   const incomeCategories = categories.filter(c => c.type === 'income');
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.name.trim()) newErrors.name = 'El nombre es obligatorio';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-
-    addCategory({
-      name: formData.name,
-      type: formData.type,
-      icon: formData.icon,
-      color: formData.color
-    });
-    
-    setFormData({ name: '', type: 'expense', icon: '🏷️', color: '#a855f7' });
-    toast.success('¡Categoría creada! 🎉');
+  const onSubmit = async (values: CategoryFormValues) => {
+    try {
+      await addCategory({
+        name: values.name,
+        type: values.type,
+        icon: values.icon,
+        color: values.color,
+      });
+      reset();
+      toast.success('¡Categoría creada! 🎉');
+    } catch {
+      toast.error('Error', { description: 'No se pudo crear la categoría.' });
+    }
   };
 
   const handleDeleteClick = (id: string, name: string) => {
@@ -157,16 +164,16 @@ export default function CategoriesPage() {
             Nueva Categoría
           </h2>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Tipo */}
             <div>
               <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">Tipo</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, type: 'expense' }))}
+                  onClick={() => setValue('type', 'expense', { shouldValidate: true })}
                   className={`py-2 px-3 rounded-xl font-bold transition-all flex items-center justify-center gap-1 ${
-                    formData.type === 'expense' 
+                    watchedType === 'expense' 
                       ? 'bg-gradient-to-r from-red-400 to-orange-400 text-white shadow-md' 
                       : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300'
                   }`}
@@ -175,9 +182,9 @@ export default function CategoriesPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, type: 'income' }))}
+                  onClick={() => setValue('type', 'income', { shouldValidate: true })}
                   className={`py-2 px-3 rounded-xl font-bold transition-all flex items-center justify-center gap-1 ${
-                    formData.type === 'income' 
+                    watchedType === 'income' 
                       ? 'bg-gradient-to-r from-green-400 to-emerald-400 text-white shadow-md' 
                       : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300'
                   }`}
@@ -192,12 +199,11 @@ export default function CategoriesPage() {
               <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Nombre *</label>
               <input
                 type="text"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="Ej: Alquiler, Sueldo..."
                 className={`${inputClass} ${errors.name ? 'border-red-400' : ''}`}
+                {...register('name')}
               />
-              {errors.name && <p className="text-xs text-red-400 mt-1 font-bold">{errors.name}</p>}
+              {errors.name && <p className="text-xs text-red-400 mt-1 font-bold">{errors.name.message}</p>}
             </div>
 
             {/* Icono */}
@@ -208,9 +214,9 @@ export default function CategoriesPage() {
                   <button
                     key={emoji}
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, icon: emoji }))}
+                    onClick={() => setValue('icon', emoji, { shouldValidate: true })}
                     className={`p-2 text-xl rounded-xl transition ${
-                      formData.icon === emoji
+                      watchedIcon === emoji
                         ? 'bg-purple-100 dark:bg-purple-900/40 border-2 border-purple-400 scale-110'
                         : 'bg-gray-50 dark:bg-slate-800 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
                     }`}
@@ -229,21 +235,22 @@ export default function CategoriesPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="color"
-                  value={formData.color}
-                  onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
                   className="h-10 w-16 rounded-xl cursor-pointer border-2 border-gray-200 dark:border-slate-700 p-1"
+                  {...register('color')}
                 />
                 <div 
                   className="flex-1 h-10 rounded-xl shadow-inner"
-                  style={{ backgroundColor: formData.color }}
+                  style={{ backgroundColor: watchedColor }}
                 />
               </div>
+              {errors.color && <p className="text-xs text-red-400 mt-1 font-bold">{errors.color.message}</p>}
             </div>
 
             {/* Botón Guardar */}
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Guardar Categoría
