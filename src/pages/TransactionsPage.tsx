@@ -1,30 +1,21 @@
 import { useState } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
+import type { Transaction, TransactionType } from '../types';
 import ConfirmModal from '../components/ConfirmModal';
 import EditTransactionModal from '../components/EditTransactionModal';
 import { toast } from 'sonner';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Calendar, 
-  Tag, 
-  Edit2, 
+import {
+  TrendingUp,
+  TrendingDown,
+  Calendar,
+  Tag,
+  Edit2,
   Trash2,
   Wallet
 } from 'lucide-react';
 
-interface Transaction {
-  id: string;
-  name: string;
-  amount: number;
-  date: string;
-  type: 'income' | 'expense';
-  category: string;
-  description?: string;
-}
-
 interface TransactionsPageProps {
-  type: 'income' | 'expense';
+  type: TransactionType;
 }
 
 export default function TransactionsPage({ type }: TransactionsPageProps) {
