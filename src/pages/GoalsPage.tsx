@@ -1,6 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAppContext } from '../hooks/useAppContext';
-import type { Goal } from '../context/AppContext';
+import type { Goal } from '../types';
+import { calculateGoalProgress, formatCurrency as formatCurrencyUtil, formatDate as formatDateUtil, getDateKey } from '../utils/finance';
+import { goalSchema, contributionSchema } from '../schemas';
 import { toast } from 'sonner';
 import ConfirmModal from '../components/ConfirmModal';
 import { 
@@ -19,6 +23,32 @@ import {
 export default function GoalsPage() {
   const { goals, contributions, addGoal, updateGoal, deleteGoal, addContribution, deleteContribution } = useAppContext();
   
+  const GOAL_DEFAULTS = {
+    name: '',
+    icon: '🎯',
+    color: '#a855f7',
+    targetAmount: '',
+    deadline: '',
+  };
+  type GoalInput = typeof GOAL_DEFAULTS;
+
+  const CONTRIBUTION_DEFAULTS = {
+    amount: '',
+    date: getDateKey(),
+    description: '',
+  };
+  type ContributionInput = typeof CONTRIBUTION_DEFAULTS;
+
+  const goalForm = useForm<GoalInput>({
+    resolver: zodResolver(goalSchema) as never,
+    defaultValues: GOAL_DEFAULTS,
+  });
+
+  const contributionForm = useForm<ContributionInput>({
+    resolver: zodResolver(contributionSchema) as never,
+    defaultValues: CONTRIBUTION_DEFAULTS,
+  });
+
   const [showForm, setShowForm] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
@@ -26,38 +56,16 @@ export default function GoalsPage() {
   const [deleteName, setDeleteName] = useState<string>('');
   const [deleteType, setDeleteType] = useState<'goal' | 'contribution'>('goal');
 
-  // Formulario de meta
-  const [goalForm, setGoalForm] = useState({
-    name: '',
-    icon: '',
-    color: '#a855f7',
-    targetAmount: '',
-    deadline: ''
-  });
+  const emojiOptions = ['🎯', '🚗', '🏠', '💻', '📱', '👶', '💍', '🛥️', '🎓', '🎸', '🎮', '✈️'];
 
-  // Formulario de contribución
-  const [contributionForm, setContributionForm] = useState({
-    amount: '',
-    date: new Date().toISOString().split('T')[0],
-    description: ''
-  });
-
-  const emojiOptions = ['🎯', '️', '🚗', '🏠', '💻', '📱', '👶', '💍', '🛥️', '🎓', '🎸', '🎮'];
-
-  const handleSubmitGoal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!goalForm.name || !goalForm.targetAmount || !goalForm.deadline) {
-      toast.error('Datos incompletos');
-      return;
-    }
-
+  const handleSubmitGoal = goalForm.handleSubmit(async (values: GoalInput) => {
     try {
       const goalData = {
-        name: goalForm.name,
-        icon: goalForm.icon,
-        color: goalForm.color,
-        targetAmount: parseFloat(goalForm.targetAmount),
-        deadline: goalForm.deadline
+        name: values.name,
+        icon: values.icon,
+        color: values.color,
+        targetAmount: Number(values.targetAmount),
+        deadline: values.deadline
       };
 
       if (editingGoal) {
@@ -68,21 +76,21 @@ export default function GoalsPage() {
         toast.success('¡Meta creada! 🎉');
       }
 
-      setGoalForm({ name: '', icon: '🎯', color: '#a855f7', targetAmount: '', deadline: '' });
+      goalForm.reset(GOAL_DEFAULTS);
       setShowForm(false);
       setEditingGoal(null);
     } catch {
       toast.error('Error', { description: 'No se pudo guardar la meta.' });
     }
-  };
+  });
 
   const handleEditGoal = (goal: Goal) => {
     setEditingGoal(goal);
-    setGoalForm({
+    goalForm.reset({
       name: goal.name,
       icon: goal.icon,
       color: goal.color,
-      targetAmount: goal.targetAmount.toString(),
+      targetAmount: String(goal.targetAmount),
       deadline: goal.deadline
     });
     setShowForm(true);
@@ -90,7 +98,7 @@ export default function GoalsPage() {
 
   const handleCancelEdit = () => {
     setEditingGoal(null);
-    setGoalForm({ name: '', icon: '🎯', color: '#a855f7', targetAmount: '', deadline: '' });
+    goalForm.reset(GOAL_DEFAULTS);
     setShowForm(false);
   };
 
@@ -117,41 +125,27 @@ export default function GoalsPage() {
     setDeleteId(null);
   };
 
-  const handleAddContribution = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedGoal || !contributionForm.amount || parseFloat(contributionForm.amount) <= 0) {
-      toast.error('Monto inválido');
-      return;
-    }
+  const handleAddContribution = contributionForm.handleSubmit(async (values: ContributionInput) => {
+    if (!selectedGoal) return;
 
     try {
       await addContribution({
         goalId: selectedGoal.id || '',
-        amount: parseFloat(contributionForm.amount),
-        date: contributionForm.date,
-        description: contributionForm.description
+        amount: Number(values.amount),
+        date: values.date,
+        description: values.description
       });
       
       toast.success('¡Aporte registrado! 💰');
-      setContributionForm({ amount: '', date: new Date().toISOString().split('T')[0], description: '' });
+      contributionForm.reset(CONTRIBUTION_DEFAULTS);
     } catch {
       toast.error('Error', { description: 'No se pudo registrar el aporte.' });
     }
-  };
+  });
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatCurrencyUtil(amount, { noCents: true });
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
-
-  const getDaysRemaining = (deadline: string) => {
-    const today = new Date();
-    const end = new Date(deadline);
-    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
+  const formatDate = (dateStr: string) => formatDateUtil(dateStr, { withYear: true });
 
   const getProgressColor = (percentage: number) => {
     if (percentage >= 100) return 'from-green-400 to-emerald-500';
@@ -180,7 +174,7 @@ export default function GoalsPage() {
           </p>
         </div>
         <button
-          onClick={() => { setShowForm(true); setEditingGoal(null); setGoalForm({ name: '', icon: '🎯', color: '#a855f7', targetAmount: '', deadline: '' }); }}
+          onClick={() => { setShowForm(true); setEditingGoal(null); goalForm.reset(GOAL_DEFAULTS); }}
           className="btn-soft bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold shadow-lg flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
@@ -206,17 +200,17 @@ export default function GoalsPage() {
             <form onSubmit={handleSubmitGoal} className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Nombre</label>
-                <input type="text" value={goalForm.name} onChange={(e) => setGoalForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Ej: Vacaciones, Auto nuevo..." className={inputClass} required />
+                <input type="text" placeholder="Ej: Vacaciones, Auto nuevo..." className={inputClass} {...goalForm.register('name')} />
+                {goalForm.formState.errors.name && <p className="text-xs text-red-400 mt-1 font-bold">{goalForm.formState.errors.name.message}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Ícono</label>
                 <div className="grid grid-cols-6 gap-2">
                   {emojiOptions.map((emoji) => (
-                    <button key={emoji} type="button" onClick={() => setGoalForm(prev => ({ ...prev, icon: emoji }))}
+                    <button key={emoji} type="button" onClick={() => goalForm.setValue('icon', emoji, { shouldValidate: true })}
                       className={`p-2 text-xl rounded-xl transition ${
-                        goalForm.icon === emoji ? 'bg-purple-100 dark:bg-purple-900/40 border-2 border-purple-400 scale-110' : 'bg-gray-50 dark:bg-slate-800 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                        goalForm.watch('icon') === emoji ? 'bg-purple-100 dark:bg-purple-900/40 border-2 border-purple-400 scale-110' : 'bg-gray-50 dark:bg-slate-800 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
                       }`}>
                       {emoji}
                     </button>
@@ -226,27 +220,26 @@ export default function GoalsPage() {
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Color</label>
-                <input type="color" value={goalForm.color} onChange={(e) => setGoalForm(prev => ({ ...prev, color: e.target.value }))}
-                  className="w-full h-10 rounded-xl cursor-pointer border-2 border-gray-200 dark:border-slate-700 p-1" />
+                <input type="color" className="w-full h-10 rounded-xl cursor-pointer border-2 border-gray-200 dark:border-slate-700 p-1" {...goalForm.register('color')} />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Monto objetivo</label>
-                <input type="number" value={goalForm.targetAmount} onChange={(e) => setGoalForm(prev => ({ ...prev, targetAmount: e.target.value }))}
-                  placeholder="0" min="0" className={inputClass} required />
+                <input type="number" placeholder="0" min="0" className={inputClass} {...goalForm.register('targetAmount')} />
+                {goalForm.formState.errors.targetAmount && <p className="text-xs text-red-400 mt-1 font-bold">{goalForm.formState.errors.targetAmount.message}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Fecha límite</label>
-                <input type="date" value={goalForm.deadline} onChange={(e) => setGoalForm(prev => ({ ...prev, deadline: e.target.value }))}
-                  className={inputClass} required />
+                <input type="date" className={inputClass} {...goalForm.register('deadline')} />
+                {goalForm.formState.errors.deadline && <p className="text-xs text-red-400 mt-1 font-bold">{goalForm.formState.errors.deadline.message}</p>}
               </div>
 
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={handleCancelEdit} className="flex-1 py-2.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold rounded-2xl transition">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-2xl transition-all shadow-lg">
+                <button type="submit" disabled={goalForm.formState.isSubmitting} className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white font-bold rounded-2xl transition-all shadow-lg">
                   {editingGoal ? 'Actualizar' : 'Crear'}
                 </button>
               </div>
@@ -265,9 +258,10 @@ export default function GoalsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {goals.map(goal => {
-            const percentage = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
-            const daysLeft = getDaysRemaining(goal.deadline);
-            const isCompleted = percentage >= 100;
+            const progress = calculateGoalProgress(goal);
+            const percentage = progress.percentage;
+            const daysLeft = progress.daysRemaining;
+            const isCompleted = progress.isCompleted;
 
             return (
               <div 
@@ -357,14 +351,12 @@ export default function GoalsPage() {
             <form onSubmit={handleAddContribution} className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="relative md:col-span-1">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
-                <input type="number" value={contributionForm.amount} onChange={(e) => setContributionForm(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="Monto" min="1" className={`${inputClass} pl-8`} required />
+                <input type="number" placeholder="Monto" min="1" className={`${inputClass} pl-8`} {...contributionForm.register('amount')} />
+                {contributionForm.formState.errors.amount && <p className="text-xs text-red-400 mt-1 font-bold col-span-full">{contributionForm.formState.errors.amount.message}</p>}
               </div>
-              <input type="date" value={contributionForm.date} onChange={(e) => setContributionForm(prev => ({ ...prev, date: e.target.value }))}
-                className={inputClass} required />
-              <input type="text" value={contributionForm.description} onChange={(e) => setContributionForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Descripción (opcional)" className={inputClass} />
-              <button type="submit" className="bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white font-bold py-2.5 px-4 rounded-2xl transition shadow-md flex items-center justify-center gap-2">
+              <input type="date" className={inputClass} {...contributionForm.register('date')} />
+              <input type="text" placeholder="Descripción (opcional)" className={inputClass} {...contributionForm.register('description')} />
+              <button type="submit" disabled={contributionForm.formState.isSubmitting} className="bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-2xl transition shadow-md flex items-center justify-center gap-2">
                 <Plus className="w-4 h-4" /> Aportar
               </button>
             </form>

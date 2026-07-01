@@ -1,13 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAppContext } from '../hooks/useAppContext';
+import { calculateBudgetProgress, formatCurrency, getMonthKey } from '../utils/finance';
+import { budgetSchema } from '../schemas';
 import { toast } from 'sonner';
 import ConfirmModal from '../components/ConfirmModal';
-import { 
-  PiggyBank, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  AlertTriangle, 
+import {
+  PiggyBank,
+  Plus,
+  Edit2,
+  Trash2,
+  AlertTriangle,
   CheckCircle2,
   DollarSign
 } from 'lucide-react';
@@ -18,46 +22,40 @@ export default function BudgetsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState<string>('');
 
-  // Formulario
-  const [formData, setFormData] = useState({
+  const BUDGET_DEFAULTS = {
     categoryId: '',
-    amount: ''
+    amount: '',
+  };
+  type BudgetInput = typeof BUDGET_DEFAULTS;
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<BudgetInput>({
+    resolver: zodResolver(budgetSchema) as never,
+    defaultValues: BUDGET_DEFAULTS,
   });
 
   // Mes actual
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = getMonthKey();
   const monthName = new Date().toLocaleString('es-AR', { month: 'long', year: 'numeric' });
 
-  // Calcular gastos del mes actual por categoría
-  const spentByCategory = useMemo(() => {
-    const spent: Record<string, number> = {};
-    transactions
-      .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
-      .forEach(t => {
-        const cat = categories.find(c => c.name === t.category);
-        if (cat && cat.id) {
-          spent[cat.id] = (spent[cat.id] || 0) + t.amount;
-        }
-      });
-    return spent;
-  }, [transactions, categories, currentMonth]);
+  const watchedCategoryId = watch('categoryId');
 
   const budgetedCategoryIds = budgets.map(b => b.categoryId);
   const availableCategories = categories.filter(c => 
     c.type === 'expense' && c.id && (!budgetedCategoryIds.includes(c.id) || c.id === editingId)
   );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.categoryId || !formData.amount || parseFloat(formData.amount) <= 0) {
-      toast.error('Datos inválidos', { description: 'Seleccioná una categoría y un monto válido.' });
-      return;
-    }
-
+  const onSubmit = async (values: BudgetInput) => {
     try {
       const budgetData = {
-        categoryId: formData.categoryId,
-        amount: parseFloat(formData.amount),
+        categoryId: values.categoryId,
+        amount: Number(values.amount),
         month: currentMonth
       };
 
@@ -69,7 +67,7 @@ export default function BudgetsPage() {
         toast.success('¡Presupuesto creado! 🎉');
       }
 
-      setFormData({ categoryId: '', amount: '' });
+      reset(BUDGET_DEFAULTS);
       setEditingId(null);
     } catch {
       toast.error('Error', { description: 'No se pudo guardar el presupuesto.' });
@@ -78,15 +76,13 @@ export default function BudgetsPage() {
 
   const handleEdit = (budget: { id: string; categoryId: string; amount: number }) => {
     setEditingId(budget.id);
-    setFormData({
-      categoryId: budget.categoryId,
-      amount: budget.amount.toString()
-    });
+    setValue('categoryId', budget.categoryId, { shouldValidate: true });
+    setValue('amount', String(budget.amount), { shouldValidate: true });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setFormData({ categoryId: '', amount: '' });
+    reset(BUDGET_DEFAULTS);
   };
 
   const handleDeleteClick = (id: string, categoryName: string) => {
@@ -107,13 +103,11 @@ export default function BudgetsPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount);
-  };
+  const formatCurrencyLocal = (amount: number) => formatCurrency(amount, { noCents: true });
 
-  const getProgressColor = (percentage: number) => {
-    if (percentage >= 100) return 'from-red-400 to-rose-500';
-    if (percentage >= 75) return 'from-yellow-400 to-orange-400';
+  const getProgressColor = (status: 'ok' | 'warning' | 'over') => {
+    if (status === 'over') return 'from-red-400 to-rose-500';
+    if (status === 'warning') return 'from-yellow-400 to-orange-400';
     return 'from-green-400 to-emerald-500';
   };
 
@@ -147,10 +141,8 @@ export default function BudgetsPage() {
               const category = categories.find(c => c.id === budget.categoryId);
               if (!category) return null;
 
-              const spent = spentByCategory[budget.categoryId] || 0;
-              const percentage = Math.min((spent / budget.amount) * 100, 100);
-              const remaining = budget.amount - spent;
-              const isOverBudget = spent > budget.amount;
+              const progress = calculateBudgetProgress(budget, transactions, categories);
+              const { spent, budgeted, remaining, percentage, isOverBudget, status } = progress;
 
               return (
                 <div key={budget.id} className="card-soft p-5 hover:shadow-lg transition-all">
@@ -171,7 +163,7 @@ export default function BudgetsPage() {
                             </span>
                           ) : (
                             <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Te queda {formatCurrency(remaining)}
+                              <CheckCircle2 className="w-3 h-3" /> Te queda {formatCurrencyLocal(remaining)}
                             </span>
                           )}
                         </div>
@@ -199,18 +191,18 @@ export default function BudgetsPage() {
                   {/* Barra de progreso */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm font-bold">
-                      <span className="text-gray-700 dark:text-gray-300">{formatCurrency(spent)} gastado</span>
-                      <span className="text-gray-900 dark:text-white">{formatCurrency(budget.amount)} límite</span>
+                      <span className="text-gray-700 dark:text-gray-300">{formatCurrencyLocal(spent)} gastado</span>
+                      <span className="text-gray-900 dark:text-white">{formatCurrencyLocal(budgeted)} límite</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden shadow-inner">
                       <div 
-                        className={`h-full rounded-full bg-gradient-to-r ${getProgressColor(percentage)} transition-all duration-700 ease-out shadow-sm`}
+                        className={`h-full rounded-full bg-gradient-to-r ${getProgressColor(status)} transition-all duration-700 ease-out shadow-sm`}
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
                     <div className="text-right">
                       <span className={`text-xs font-bold ${
-                        percentage >= 100 ? 'text-red-500' : percentage >= 75 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'
+                        status === 'over' ? 'text-red-500' : status === 'warning' ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'
                       }`}>
                         {percentage.toFixed(0)}% utilizado
                       </span>
@@ -229,21 +221,21 @@ export default function BudgetsPage() {
             {editingId ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}
           </h2>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Categoría */}
             <div>
               <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">Categoría</label>
               <select
-                value={formData.categoryId}
-                onChange={(e) => setFormData(prev => ({ ...prev, categoryId: e.target.value }))}
-                className={`${inputClass} ${!formData.categoryId ? 'text-gray-400' : ''}`}
+                className={`${inputClass} ${!watchedCategoryId ? 'text-gray-400' : ''}`}
                 disabled={!!editingId}
+                {...register('categoryId')}
               >
                 <option value="">Seleccionar categoría</option>
                 {availableCategories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                 ))}
               </select>
+              {errors.categoryId && <p className="text-xs text-red-400 mt-1 font-bold">{errors.categoryId.message}</p>}
             </div>
 
             {/* Monto */}
@@ -253,13 +245,13 @@ export default function BudgetsPage() {
                 <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="number"
-                  value={formData.amount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
                   placeholder="0"
                   min="0"
                   className={`${inputClass} pl-11`}
+                  {...register('amount')}
                 />
               </div>
+              {errors.amount && <p className="text-xs text-red-400 mt-1 font-bold">{errors.amount.message}</p>}
             </div>
 
             {/* Botones */}
@@ -275,7 +267,8 @@ export default function BudgetsPage() {
               )}
               <button
                 type="submit"
-                className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
+                disabled={isSubmitting}
+                className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
               >
                 {editingId ? 'Actualizar' : 'Guardar'}
               </button>

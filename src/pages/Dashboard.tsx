@@ -1,8 +1,18 @@
 import { useAppContext } from '../hooks/useAppContext';
-import { 
-  Wallet, 
-  TrendingUp, 
-  TrendingDown, 
+import {
+  summarizeTransactions,
+  averageExpense,
+  largestExpense,
+  expenseToIncomeRatio,
+  recentTransactions as getRecent,
+  formatCurrency,
+  formatDate,
+} from '../utils/finance';
+import type { Transaction } from '../types';
+import {
+  Wallet,
+  TrendingUp,
+  TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
   Calendar,
@@ -17,32 +27,13 @@ interface DashboardProps {
 export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
   const { transactions } = useAppContext();
 
-  // Calcular totales
-  const totalIncome = transactions
-    .filter((t) => t.type === 'income')
-    .reduce((acc, t) => acc + t.amount, 0);
+  const { income: totalIncome, expense: totalExpense, balance } =
+    summarizeTransactions(transactions);
 
-  const totalExpense = transactions
-    .filter((t) => t.type === 'expense')
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const balance = totalIncome - totalExpense;
-
-  // Últimas 5 transacciones
-  const recentTransactions = [...transactions]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('es-AR', { 
-      day: 'numeric', 
-      month: 'short' 
-    });
-  };
+  const recent = getRecent(transactions, 5);
+  const avgExpense = averageExpense(transactions);
+  const topExpense: Transaction | null = largestExpense(transactions);
+  const expenseRatio = expenseToIncomeRatio(transactions);
 
   return (
     <div className="space-y-6">
@@ -137,11 +128,11 @@ export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
               Últimas Transacciones
             </h2>
             <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 px-3 py-1 rounded-full">
-              {recentTransactions.length} recientes
+              {recent.length} recientes
             </span>
           </div>
 
-          {recentTransactions.length === 0 ? (
+          {recent.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-5xl mb-3 animate-float">📭</div>
               <p className="text-gray-500 dark:text-gray-400 font-medium">
@@ -153,7 +144,7 @@ export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {recentTransactions.map((t) => (
+              {recent.map((t) => (
                 <div 
                   key={t.id}
                   className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-slate-700/50 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all group"
@@ -215,7 +206,7 @@ export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
                   Gastos vs Ingresos
                 </span>
                 <span className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-white dark:bg-slate-800 px-2 py-1 rounded-full">
-                  {totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0}%
+                  {totalIncome > 0 ? Math.round(expenseRatio) : 0}%
                 </span>
               </div>
               <div className="w-full bg-white dark:bg-slate-700 rounded-full h-3 overflow-hidden">
@@ -225,7 +216,7 @@ export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
                 />
               </div>
               <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                {totalExpense > totalIncome 
+                {expenseRatio > 100 
                   ? '⚠️ Estás gastando más de lo que ganás' 
                   : '✅ Estás ahorrando este mes'}
               </p>
@@ -238,28 +229,22 @@ export default function Dashboard({ onOpenSidePanel }: DashboardProps) {
               </p>
               <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
                 {transactions.filter(t => t.type === 'expense').length > 0
-                  ? formatCurrency(totalExpense / transactions.filter(t => t.type === 'expense').length)
+                  ? formatCurrency(avgExpense)
                   : formatCurrency(0)}
               </p>
             </div>
 
             {/* Mayor gasto */}
-            {transactions.filter(t => t.type === 'expense').length > 0 && (
+            {topExpense && (
               <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-100 dark:border-orange-800/30">
                 <p className="text-xs font-bold text-gray-600 dark:text-gray-300 mb-1">
                   Mayor gasto
                 </p>
                 <p className="text-lg font-bold text-orange-700 dark:text-orange-300 truncate">
-                  {transactions
-                    .filter(t => t.type === 'expense')
-                    .sort((a, b) => b.amount - a.amount)[0].name}
+                  {topExpense.name}
                 </p>
                 <p className="text-sm font-bold text-orange-600 dark:text-orange-400">
-                  {formatCurrency(
-                    transactions
-                      .filter(t => t.type === 'expense')
-                      .sort((a, b) => b.amount - a.amount)[0].amount
-                  )}
+                  {formatCurrency(topExpense.amount)}
                 </p>
               </div>
             )}
