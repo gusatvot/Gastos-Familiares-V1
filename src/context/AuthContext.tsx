@@ -33,9 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
+        // Recargar el usuario para obtener el estado más reciente de emailVerified
         await currentUser.reload();
-        setUser(auth.currentUser);
-        setIsEmailVerified(auth.currentUser?.emailVerified || false);
+        const updatedUser = auth.currentUser;
+        setUser(updatedUser);
+        // Verificar explícitamente el estado de emailVerified
+        setIsEmailVerified(updatedUser?.emailVerified || false);
       } else {
         setUser(null);
         setIsEmailVerified(false);
@@ -49,6 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
+      // Recargar el usuario después del login para obtener el estado actualizado de emailVerified
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        setIsEmailVerified(auth.currentUser.emailVerified || false);
+      }
     } catch (error) {
       console.error('Error al iniciar sesión con Google:', error);
       throw error;
@@ -58,6 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithEmail = async (email: string, password: string) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // Recargar el usuario después del login para obtener el estado actualizado de emailVerified
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        setIsEmailVerified(auth.currentUser.emailVerified || false);
+      }
     } catch (error) {
       console.error('Error al iniciar sesión con email:', error);
       throw error;
